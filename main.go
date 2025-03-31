@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	//"io"
+	"io"
 	"net"
-	//"os"
+	"os"
 )
 
 func main() {
@@ -33,5 +33,33 @@ func main() {
 	}
 	//ensure closing connection at exit
 	defer conn.Close()
+
+	//for loop for continous connections
+	for {
+		//create a 1024 byte buffer to store the respones for any request
+		buf := make([]byte, 1024)
+
+		// read message from client
+		//any request that has come in is read here
+
+		_, err = conn.Read(buf)
+		//logging to confirm request, printing out byte version of request
+		fmt.Println("REQUEST:", buf)
+
+		//error handling, except for an EOF error
+		if err != nil {
+			if err == io.EOF {
+				//logging to confirm eof
+				fmt.Println("EOF: ", err.Error())
+				break
+			}
+			//any other error is bad and should be logged
+			fmt.Println("error reading from client: ", err.Error())
+			os.Exit(1)
+		}
+
+		// ignore request and send back OK
+		conn.Write([]byte("+OK\r\n"))
+	}
 
 }
