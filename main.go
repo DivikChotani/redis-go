@@ -59,6 +59,7 @@ func main() {
 		}
 
 		// ignore request and send back OK
+		//‘\r\n’ is called CRLF and it indicates the end of a line.
 		conn.Write([]byte("+OK\r\n"))
 	}
 
