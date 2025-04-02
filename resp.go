@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"strconv"
 )
@@ -80,4 +81,78 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 	//return that int
 	return int(i64), n, nil
 
+}
+
+// create an overarching read function that accepts array or bulk string inputs
+func (r *Resp) Read() (Value, error) {
+	_type, err := r.reader.ReadByte()
+
+	if err != nil {
+		return Value{}, err
+	}
+	//based on the first byte, we can determine the type of input
+	switch _type {
+	case ARRAY:
+		fmt.Printf("ARRAY TYPE")
+		return r.readArray()
+	case BULK:
+		fmt.Printf("Bulk string type")
+		return r.readBulk()
+	default:
+		fmt.Printf("Unknown type: %v", string(_type))
+		return Value{}, nil
+	}
+}
+
+// reading the array type
+func (r *Resp) readArray() (Value, error) {
+	v := Value{}
+	v.typ = "array"
+	//create a type array here
+
+	// read length of array
+	length, _, err := r.readInteger()
+	if err != nil {
+		return v, err
+	}
+
+	v.array = make([]Value, length)
+
+	//for every element in the array, call read to read it and add to value
+	for i := 0; i < length; i++ {
+		val, err := r.Read()
+		if err != nil {
+			return v, err
+		}
+		//add after the recursive call here
+		v.array[i] = val
+	}
+	return v, nil
+}
+
+// no recursion needed for bulk, since it will be non nested
+func (r *Resp) readBulk() (Value, error) {
+	v := Value{}
+
+	//bulk
+	v.typ = "bulk"
+
+	len, _, err := r.readInteger()
+	if err != nil {
+		return v, err
+	}
+
+	//create space in memory store the string
+	bulk := make([]byte, len)
+
+	//fill the buffer
+	r.reader.Read(bulk)
+
+	//add to calue
+	v.bulk = string(bulk)
+
+	// Read the trailing CRLF
+	r.readLine()
+
+	return v, nil
 }
