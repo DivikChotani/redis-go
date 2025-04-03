@@ -38,34 +38,19 @@ func newResp(rd io.Reader) *Resp {
 }
 
 // reads the line from the resp and then returns it with the last to \r and \n chars removed
-func (r *Resp) readLine() (line []byte, n int, err error) {
-
-	//infite for loop
-	for {
-		//read one byte at a time
-		b, err := r.reader.ReadByte()
-		if err != nil {
-			return nil, 0, err
-		}
-		//increment number of bytes read
-		n += 1
-
-		//append bite to the line
-		line = append(line, b)
-
-		//break when certain characters are added to line
-		if len(line) >= 2 && line[len(line)-2] == '\r' {
-			break
-		}
+func (r *Resp) readLine() ([]byte, int, error) {
+	line, err := r.reader.ReadBytes('\n')
+	if err != nil {
+		return nil, 0, err
 	}
-
-	//return line with the last two characters removed
-	return line[:len(line)-2], n, nil
+	if len(line) < 2 || line[len(line)-2] != '\r' {
+		return nil, 0, fmt.Errorf("invalid line ending: %q", line)
+	}
+	return line[:len(line)-2], len(line), nil
 }
 
 // read the integer from the buffer indicating how long the input is
 func (r *Resp) readInteger() (x int, n int, err error) {
-
 	//call our read line function to get the line
 	line, n, err := r.readLine()
 	if err != nil {
@@ -80,27 +65,25 @@ func (r *Resp) readInteger() (x int, n int, err error) {
 	}
 	//return that int
 	return int(i64), n, nil
-
 }
 
 // create an overarching read function that accepts array or bulk string inputs
 func (r *Resp) Read() (Value, error) {
+	// Read the first byte which indicates the type
 	_type, err := r.reader.ReadByte()
-
 	if err != nil {
 		return Value{}, err
 	}
-	//based on the first byte, we can determine the type of input
+
+	fmt.Printf("RESP type byte: %q\n", _type)
+
 	switch _type {
 	case ARRAY:
-		fmt.Printf("ARRAY TYPE")
 		return r.readArray()
 	case BULK:
-		fmt.Printf("Bulk string type")
 		return r.readBulk()
 	default:
-		fmt.Printf("Unknown type: %v", string(_type))
-		return Value{}, nil
+		return Value{}, fmt.Errorf("unsupporsted RESP type: %q", _type)
 	}
 }
 
@@ -108,7 +91,6 @@ func (r *Resp) Read() (Value, error) {
 func (r *Resp) readArray() (Value, error) {
 	v := Value{}
 	v.typ = "array"
-	//create a type array here
 
 	// read length of array
 	length, _, err := r.readInteger()
@@ -116,43 +98,58 @@ func (r *Resp) readArray() (Value, error) {
 		return v, err
 	}
 
+	// Initialize the array slice
 	v.array = make([]Value, length)
 
-	//for every element in the array, call read to read it and add to value
+	// For every element in the array, call Read to read it
 	for i := 0; i < length; i++ {
 		val, err := r.Read()
 		if err != nil {
 			return v, err
 		}
-		//add after the recursive call here
 		v.array[i] = val
 	}
+
 	return v, nil
 }
 
 // no recursion needed for bulk, since it will be non nested
 func (r *Resp) readBulk() (Value, error) {
 	v := Value{}
-
-	//bulk
 	v.typ = "bulk"
 
-	len, _, err := r.readInteger()
+	// Read the bulk string length
+	length, _, err := r.readInteger()
 	if err != nil {
 		return v, err
 	}
 
-	//create space in memory store the string
-	bulk := make([]byte, len)
+	// Handle NULL bulk string ($-1\r\n)
+	if length == -1 {
+		v.bulk = ""
+		return v, nil
+	}
 
-	//fill the buffer
-	r.reader.Read(bulk)
-
-	//add to calue
+	// Read exactly `length` bytes
+	bulk := make([]byte, length)
+	_, err = io.ReadFull(r.reader, bulk)
+	if err != nil {
+		return v, err
+	}
 	v.bulk = string(bulk)
 
-	// Read the trailing CRLF
-	r.readLine()
+	// Then read the trailing \r\n (exactly two bytes)
+	cr, err := r.reader.ReadByte()
+	if err != nil {
+		return v, err
+	}
+	lf, err := r.reader.ReadByte()
+	if err != nil {
+		return v, err
+	}
+	if cr != '\r' || lf != '\n' {
+		return v, fmt.Errorf("expected CRLF after bulk string, got: %q%q", cr, lf)
+	}
 
 	return v, nil
 }

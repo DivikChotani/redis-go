@@ -6,46 +6,54 @@ import (
 )
 
 func main() {
-
 	//stdout letting user know where server is running
 	fmt.Println("Listening on port 6379")
 
 	//create a new server
-
-	//create a listener object from net.listen that listens on port 6379
-	//specify a tcp connection
 	l, err := net.Listen("tcp", ":6379")
-
-	//error handling, print error and leave
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
+	defer l.Close()
 
-	//create a connection from the listener
-	conn, err := l.Accept()
-	//error checking again
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	//ensure closing connection at exit
-	defer conn.Close()
-
-	//for loop for continous connections
 	for {
-		resp := newResp(conn)
-		value, err := resp.Read()
+		//create a connection from the listener
+		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println(err)
-			return
+			continue
 		}
 
-		fmt.Println(value)
+		// Handle each connection in a separate goroutine
+		go handleConnection(conn)
+	}
+}
 
-		// ignore request and send back OK
-		//‘\r\n’ is called CRLF and it indicates the end of a line.
-		conn.Write([]byte("+OK\r\n"))
+func handleConnection(conn net.Conn) {
+	defer conn.Close()
+	fmt.Println("New connection established")
+
+	// Create a new RESP parser for this connection
+	resp := newResp(conn)
+
+	// Try to read one command
+	value, err := resp.Read()
+	if err != nil {
+		fmt.Println("Error reading:", err)
+		return
 	}
 
+	// Print the parsed command in a more readable format
+	if value.typ == "array" {
+		fmt.Printf("Received command array with %d elements:\n", len(value.array))
+		for i, elem := range value.array {
+			fmt.Printf("  [%d] Type: %q, Bulk: %q\n", i, elem.typ, elem.bulk)
+		}
+	} else {
+		fmt.Printf("Received value of type: %s\n", value.typ)
+	}
+
+	// Send OK response
+	conn.Write([]byte("+OK\r\n"))
 }
