@@ -50,7 +50,7 @@ func (r *Resp) readLine() ([]byte, int, error) {
 }
 
 // read the integer from the buffer indicating how long the input is
-func (r *Resp) readInteger() (x int, n int, err error) {
+func (r *Resp) readIntegerLength() (x int, n int, err error) {
 	//call our read line function to get the line
 	line, n, err := r.readLine()
 	if err != nil {
@@ -82,8 +82,33 @@ func (r *Resp) Read() (Value, error) {
 		return r.readArray()
 	case BULK:
 		return r.readBulk()
+	case STRING:
+		return r.readString()
+	case ERROR:
+		return r.readError()
+	case INTEGER:
+		return r.readIntegerValue()
 	default:
-		return Value{}, fmt.Errorf("unsupporsted RESP type: %q", _type)
+		// If we get a carriage return, it's likely part of a CRLF sequence
+		// Try to read the next byte to see if it's a newline
+		if _type == '\r' {
+			next, err := r.reader.ReadByte()
+			if err != nil {
+				return Value{}, err
+			}
+			if next == '\n' {
+				// This was a CRLF sequence, try reading the next type
+				return r.Read()
+			}
+			// Put the bytes back if it wasn't a CRLF
+			if err := r.reader.UnreadByte(); err != nil {
+				return Value{}, err
+			}
+			if err := r.reader.UnreadByte(); err != nil {
+				return Value{}, err
+			}
+		}
+		return Value{}, fmt.Errorf("unsupported RESP type: %q", _type)
 	}
 }
 
@@ -93,7 +118,7 @@ func (r *Resp) readArray() (Value, error) {
 	v.typ = "array"
 
 	// read length of array
-	length, _, err := r.readInteger()
+	length, _, err := r.readIntegerLength()
 	if err != nil {
 		return v, err
 	}
@@ -103,6 +128,18 @@ func (r *Resp) readArray() (Value, error) {
 
 	// For every element in the array, call Read to read it
 	for i := 0; i < length; i++ {
+		// Read the type byte for each element
+		_type, err := r.reader.ReadByte()
+		if err != nil {
+			return v, err
+		}
+
+		// Put the type byte back in the reader since Read() will need it
+		if err := r.reader.UnreadByte(); err != nil {
+			return v, err
+		}
+
+		// Read the element
 		val, err := r.Read()
 		if err != nil {
 			return v, err
@@ -119,7 +156,7 @@ func (r *Resp) readBulk() (Value, error) {
 	v.typ = "bulk"
 
 	// Read the bulk string length
-	length, _, err := r.readInteger()
+	length, _, err := r.readIntegerLength()
 	if err != nil {
 		return v, err
 	}
@@ -151,5 +188,49 @@ func (r *Resp) readBulk() (Value, error) {
 		return v, fmt.Errorf("expected CRLF after bulk string, got: %q%q", cr, lf)
 	}
 
+	return v, nil
+}
+
+func (r *Resp) readString() (Value, error) {
+	v := Value{}
+	v.typ = "string"
+
+	line, _, err := r.readLine()
+	if err != nil {
+		return v, err
+	}
+
+	v.str = string(line)
+	return v, nil
+}
+
+func (r *Resp) readError() (Value, error) {
+	v := Value{}
+	v.typ = "error"
+
+	line, _, err := r.readLine()
+	if err != nil {
+		return v, err
+	}
+
+	v.str = string(line)
+	return v, nil
+}
+
+func (r *Resp) readIntegerValue() (Value, error) {
+	v := Value{}
+	v.typ = "integer"
+
+	line, _, err := r.readLine()
+	if err != nil {
+		return v, err
+	}
+
+	num, err := strconv.Atoi(string(line))
+	if err != nil {
+		return v, err
+	}
+
+	v.num = num
 	return v, nil
 }

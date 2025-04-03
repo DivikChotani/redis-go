@@ -48,10 +48,21 @@ func handleConnection(conn net.Conn) {
 	if value.typ == "array" {
 		fmt.Printf("Received command array with %d elements:\n", len(value.array))
 		for i, elem := range value.array {
-			fmt.Printf("  [%d] Type: %q, Bulk: %q\n", i, elem.typ, elem.bulk)
+			fmt.Printf("  [%d] Type: %q, Value: %q\n", i, elem.typ, elem.bulk)
 		}
 	} else {
-		fmt.Printf("Received value of type: %s\n", value.typ)
+		switch value.typ {
+		case "string":
+			fmt.Printf("Received string: %q\n", value.str)
+		case "bulk":
+			fmt.Printf("Received bulk string: %q\n", value.bulk)
+		case "integer":
+			fmt.Printf("Received integer: %d\n", value.num)
+		case "error":
+			fmt.Printf("Received error: %q\n", value.str)
+		default:
+			fmt.Printf("Received value of type: %s\n", value.typ)
+		}
 	}
 
 	// Send OK response
