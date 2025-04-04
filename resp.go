@@ -129,7 +129,7 @@ func (r *Resp) readArray() (Value, error) {
 	// For every element in the array, call Read to read it
 	for i := 0; i < length; i++ {
 		// Read the type byte for each element
-		_type, err := r.reader.ReadByte()
+		_, err := r.reader.ReadByte()
 		if err != nil {
 			return v, err
 		}
@@ -233,4 +233,122 @@ func (r *Resp) readIntegerValue() (Value, error) {
 
 	v.num = num
 	return v, nil
+}
+
+// Marshal serializes a Value into a byte slice following a Redis-like protocol.
+// This protocol distinguishes between different types like simple strings, bulk strings,
+// arrays, nulls, and errors using specific prefix characters.
+func (v Value) Marshal() []byte {
+	switch v.typ {
+	case "array":
+		// Serialize an array of values
+		return v.marshalArray()
+	case "bulk":
+		// Serialize a binary-safe string (bulk string)
+		return v.marshalBulk()
+	case "string":
+		// Serialize a simple string
+		return v.marshalString()
+	case "null":
+		// Serialize a null (RESP null bulk string)
+		return v.marshallNull()
+	case "error":
+		// Serialize an error message
+		return v.marshallError()
+	default:
+		// Unknown type: return empty byte slice
+		return []byte{}
+	}
+}
+
+// marshalString converts a simple string into a RESP format string.
+// RESP format: +<string>\r\n
+// Example: +OK\r\n
+func (v Value) marshalString() []byte {
+	var bytes []byte
+
+	// Prefix for simple strings is '+'
+	bytes = append(bytes, STRING)
+
+	// Append the actual string characters
+	bytes = append(bytes, v.str...)
+
+	// End with CRLF
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+// marshalBulk converts a bulk string into a RESP format bulk string.
+// RESP format: $<length>\r\n<contents>\r\n
+// Example: $6\r\nfoobar\r\n
+func (v Value) marshalBulk() []byte {
+	var bytes []byte
+
+	// Prefix for bulk strings is '$'
+	bytes = append(bytes, BULK)
+
+	// Append the length of the content in decimal form
+	bytes = append(bytes, strconv.Itoa(len(v.bulk))...)
+
+	// CRLF to end the length line
+	bytes = append(bytes, '\r', '\n')
+
+	// Append the actual bulk content (binary-safe)
+	bytes = append(bytes, v.bulk...)
+
+	// Final CRLF
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+// marshalArray converts an array of Value objects into a RESP array.
+// RESP format: *<num elements>\r\n<element1><element2>...\r\n
+// Each element is recursively marshaled with the appropriate type rules.
+// Example: *2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n
+func (v Value) marshalArray() []byte {
+	length := len(v.array) // Total number of elements
+	var bytes []byte
+
+	// Prefix for arrays is '*'
+	bytes = append(bytes, ARRAY)
+
+	// Append the number of elements in the array
+	bytes = append(bytes, strconv.Itoa(length)...)
+
+	// End header with CRLF
+	bytes = append(bytes, '\r', '\n')
+
+	// Marshal each element in the array recursively
+	for i := 0; i < length; i++ {
+		bytes = append(bytes, v.array[i].Marshal()...)
+	}
+
+	return bytes
+}
+
+// marshallError converts an error string into RESP error format.
+// RESP format: -<error message>\r\n
+// Example: -ERR unknown command\r\n
+func (v Value) marshallError() []byte {
+	var bytes []byte
+
+	// Prefix for errors is '-'
+	bytes = append(bytes, ERROR)
+
+	// Append the error message string
+	bytes = append(bytes, v.str...)
+
+	// End with CRLF
+	bytes = append(bytes, '\r', '\n')
+
+	return bytes
+}
+
+// marshallNull returns a RESP representation of a null bulk string.
+// RESP format for null: $-1\r\n
+// This is used to represent a null value or missing data.
+func (v Value) marshallNull() []byte {
+	return []byte("$-1\r\n")
 }
