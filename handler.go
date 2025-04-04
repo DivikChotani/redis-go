@@ -67,3 +67,80 @@ func handleGet(args []Value) Value {
 	}
 	return Value{typ: "bulk", bulk: val}
 }
+
+// -----------------------------------------------------------------------------
+// Hash Store (HSET/HGET/HGETALL)
+// -----------------------------------------------------------------------------
+
+var (
+	hashStore   = map[string]map[string]string{} // Nested hash maps
+	hashStoreMu = sync.RWMutex{}                 // Read-write mutex for hashStore
+)
+
+// handleHSet implements the HSET command.
+// Syntax: HSET hash field value
+func handleHSet(args []Value) Value {
+	if len(args) != 3 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'HSET' command"}
+	}
+
+	hashKey := args[0].bulk
+	field := args[1].bulk
+	val := args[2].bulk
+
+	hashStoreMu.Lock()
+	if _, ok := hashStore[hashKey]; !ok {
+		hashStore[hashKey] = map[string]string{}
+	}
+	hashStore[hashKey][field] = val
+	hashStoreMu.Unlock()
+
+	return Value{typ: "string", str: "OK"}
+}
+
+// handleHGet implements the HGET command.
+// Syntax: HGET hash field
+func handleHGet(args []Value) Value {
+	if len(args) != 2 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'HGET' command"}
+	}
+
+	hashKey := args[0].bulk
+	field := args[1].bulk
+
+	hashStoreMu.RLock()
+	fieldMap, hashExists := hashStore[hashKey]
+	val, fieldExists := fieldMap[field]
+	hashStoreMu.RUnlock()
+
+	if !hashExists || !fieldExists {
+		return Value{typ: "null"}
+	}
+	return Value{typ: "bulk", bulk: val}
+}
+
+// handleHGetAll implements the HGETALL command.
+// Syntax: HGETALL hash
+func handleHGetAll(args []Value) Value {
+	if len(args) != 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'HGETALL' command"}
+	}
+
+	hashKey := args[0].bulk
+
+	hashStoreMu.RLock()
+	fieldMap, exists := hashStore[hashKey]
+	hashStoreMu.RUnlock()
+
+	if !exists {
+		return Value{typ: "null"}
+	}
+
+	// Convert field-value pairs to RESP array
+	var result []Value
+	for field, val := range fieldMap {
+		result = append(result, Value{typ: "bulk", bulk: field})
+		result = append(result, Value{typ: "bulk", bulk: val})
+	}
+	return Value{typ: "array", array: result}
+}
