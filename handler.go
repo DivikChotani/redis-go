@@ -4,6 +4,7 @@
 package main
 
 import (
+	"strconv"
 	"sync"
 )
 
@@ -143,4 +144,58 @@ func handleHGetAll(args []Value) Value {
 		result = append(result, Value{typ: "bulk", bulk: val})
 	}
 	return Value{typ: "array", array: result}
+}
+
+// -----------------------------------------------------------------------------
+// Deletion
+// -----------------------------------------------------------------------------
+
+// handleDel implements the DEL command.
+// Syntax: DEL key [key ...]
+// It deletes keys from either stringStore or hashStore.
+func handleDel(args []Value) Value {
+	if len(args) < 1 {
+		return Value{typ: "error", str: "ERR wrong number of arguments for 'DEL' command"}
+	}
+
+	deleted := 0
+
+	stringStoreMu.Lock()
+	hashStoreMu.Lock()
+	defer stringStoreMu.Unlock()
+	defer hashStoreMu.Unlock()
+
+	for _, arg := range args {
+		key := arg.bulk
+
+		// Attempt to delete from string store
+		if _, exists := stringStore[key]; exists {
+			delete(stringStore, key)
+			deleted++
+			continue
+		}
+
+		// Attempt to delete from hash store
+		if _, exists := hashStore[key]; exists {
+			delete(hashStore, key)
+			deleted++
+		}
+	}
+
+	return Value{typ: "string", str: strconv.Itoa(deleted)}
+}
+
+// -----------------------------------------------------------------------------
+// Ping
+// -----------------------------------------------------------------------------
+
+// handlePing implements the PING command.
+// Syntax: PING [message]
+// Without arguments: returns "PONG".
+// With an argument: echoes the argument.
+func handlePing(args []Value) Value {
+	if len(args) == 0 {
+		return Value{typ: "string", str: "PONG"}
+	}
+	return Value{typ: "string", str: args[0].bulk}
 }
