@@ -42,26 +42,7 @@ redis-go/
 ├── main.go          # Main server implementation
 ├── README.md        # Project documentation
 └── go.mod          # Go module file
-```
 
-## Future Improvements
-
-- [ ] Support multiple client connections
-- [ ] Implement basic Redis commands (SET, GET, etc.)
-- [ ] Add proper command parsing
-- [ ] Implement data persistence
-- [ ] Add configuration options
-- [ ] Add unit tests
-- [ ] Add proper error handling
-- [ ] Add logging system
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 
 
